@@ -71,9 +71,12 @@ hilbertfilter()
 /*--------------------------------------------------------------------*/
 
 #define SQR(x)		((x)*(x))
+#define MIN(a,b)        ((a)<(b)?(a):(b))
+#define MAX(a,b)        ((a)>(b)?(a):(b))
 #define LERP(t, a, b)	((1-(t))*(a)+(t)*(b))
 
 #define SR		(10*2080)
+// #define SR		(9600)
 #define NEW_WIDTH	(2080)
 
 #define FILTER_LENGTH	(63)
@@ -209,6 +212,7 @@ main(int argc, char *argv[])
     float *inp, *inpq, *inpi, *out, *out2, *outq, *outi, *synci, *syncq, imin, imax ;
     float *ip, *op ;
     int i, j, idx, acc ;
+    int nsamples ;
 
     initgaussfilter() ;
     generate_sync() ;
@@ -255,28 +259,31 @@ main(int argc, char *argv[])
     fprintf(stderr, "     Resampling to %d samples/second\n", SR) ;
     src_simple(&srcdata, SRC_SINC_FASTEST, 1) ;
 
+    nsamples = srcdata.output_frames_gen ;
     fprintf(stderr, "     Input Frames Used: %ld\n", srcdata.input_frames_used) ;
-    fprintf(stderr, "     Output Frames Generated: %ld\n", srcdata.output_frames_gen) ;
+    fprintf(stderr, "     Output Frames Generated: %ld\n", nsamples) ;
+
+
 
     /* There are two scanlines per second of recording */
-    height = 2 * srcdata.output_frames_gen / SR ;
+    height = 2 * nsamples / SR ;
 
     /* Each scanline lasts 0.5 seconds */
     width = SR / 2 ;
 
     fprintf(stderr, "     Image is ~ %d lines, %d samples per line.\n", height, width) ;
-    fprintf(stderr, "     check: %ld versus %d\n", srcdata.output_frames_gen, height*width) ;
+    fprintf(stderr, "     check: %ld versus %d\n", nsamples, height*width) ;
 
     /* allocate space for input and output images */
     inp =  srcdata.data_out ;
     
-    inpi = (float *) calloc(height * width, sizeof(float)) ;
-    inpq = (float *) calloc(height * width, sizeof(float)) ;
+    inpi = (float *) calloc(nsamples, sizeof(float)) ;
+    inpq = (float *) calloc(nsamples, sizeof(float)) ;
 
-    outi = (float *) calloc(height * width, sizeof(float)) ;
-    outq = (float *) calloc(height * width, sizeof(float)) ;
+    outi = (float *) calloc(nsamples, sizeof(float)) ;
+    outq = (float *) calloc(nsamples, sizeof(float)) ;
 
-    out  = (float *) calloc(height * width, sizeof(float)) ;
+    out  = (float *) calloc(nsamples, sizeof(float)) ;
 
     /* Use the Hilbert Transform to change inp to inpi/inpq */
 
@@ -284,7 +291,7 @@ main(int argc, char *argv[])
     float complex omega = 1. ;
     float complex domega = cexp(I*2.0*M_PI*2400/SR) ;
 
-    for (i=0; i<height*width; i++) {
+    for (i=0; i<nsamples; i++) {
 	float complex x = inp[i] ;
 	x *= omega ;
 	inpi[i] = creal(x) ;
@@ -294,20 +301,22 @@ main(int argc, char *argv[])
 
 #if 0
     /* filter */
-    for (i=0; i<height*width; i++) {
+    for (i=0; i<nsamples; i++) {
         outi[i] = inpi[i] ;
         outq[i] = inpq[i] ;
     }
 #else
-    dofilter(lpfilter, FILTER_LENGTH, inpi, height*width, outi) ;
-    dofilter(lpfilter, FILTER_LENGTH, inpq, height*width, outq) ;
+    dofilter(lpfilter, FILTER_LENGTH, inpi, nsamples, outi) ;
+    dofilter(lpfilter, FILTER_LENGTH, inpq, nsamples, outq) ;
 #endif
-    for (i=0; i<height*width; i++)
+
+    // Compute the amplitide, which is what we are interested in.
+    for (i=0; i<nsamples; i++)
 	out[i] = sqrt(SQR(outi[i])+SQR(outq[i])) ;
 
     fp = fopen("newsync.dat", "w") ;
 
-    for (i=0; i<height*width-SYNC_LENGTH; i++) {
+    for (i=0; i<MIN(nsamples-SYNC_LENGTH,4*SR); i++) {
         float sumA = 0., sumB = 0., avg =0. ;
 	
         for (j=0; j<SYNC_LENGTH; j++)
@@ -344,7 +353,7 @@ main(int argc, char *argv[])
     /* resample a bad, but better way... */
     float sum = 0.0, w = 0.0 ;
     float r = (float) NEW_WIDTH / width ;
-    for (i=0, j=0; i<height*width; i++) {
+    for (i=0, j=0; i<nsamples && j<height*NEW_WIDTH; i++) {
         if (w + r >= 1.0) {
             /* add in the fractional bit */
             sum += (1.0 - w) * out[i] ;
