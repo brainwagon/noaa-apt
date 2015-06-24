@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <complex.h>
 #include <math.h>
 #include <sys/stat.h>
 
@@ -19,6 +20,55 @@
  *
  * Written by Mark VandeWettering
  */
+
+/*--------------------------------------------------------------------*/
+/* Hilbert Transformer... 					      */
+/*--------------------------------------------------------------------*/
+
+/* Digital filter designed by mkfilter/mkshape/gencode   A.J. Fisher
+   Command line: /www/usr/fisher/helpers/mkshape -h 63 -w -l */
+
+#define NZEROS 62
+#define GAIN   1.568293847e+00
+
+static float xv[NZEROS+1];
+
+static float xcoeffs[] =
+  { +0.0025806452, +0.0000000000, +0.0030833182, +0.0000000000,
+    +0.0043436817, +0.0000000000, +0.0064979527, +0.0000000000,
+    +0.0096989225, +0.0000000000, +0.0141274550, +0.0000000000,
+    +0.0200126097, +0.0000000000, +0.0276672484, +0.0000000000,
+    +0.0375532412, +0.0000000000, +0.0504077050, +0.0000000000,
+    +0.0675073918, +0.0000000000, +0.0912854169, +0.0000000000,
+    +0.1270041052, +0.0000000000, +0.1884398887, +0.0000000000,
+    +0.3263013526, +0.0000000000, +0.9976398888, +0.0000000000,
+    -0.9976398888, -0.0000000000, -0.3263013526, -0.0000000000,
+    -0.1884398887, -0.0000000000, -0.1270041052, -0.0000000000,
+    -0.0912854169, -0.0000000000, -0.0675073918, -0.0000000000,
+    -0.0504077050, -0.0000000000, -0.0375532412, -0.0000000000,
+    -0.0276672484, -0.0000000000, -0.0200126097, -0.0000000000,
+    -0.0141274550, -0.0000000000, -0.0096989225, -0.0000000000,
+    -0.0064979527, -0.0000000000, -0.0043436817, -0.0000000000,
+    -0.0030833182, -0.0000000000, -0.0025806452,
+  };
+
+#if 0
+static void 
+hilbertfilter()
+{ 
+    for (;;) { 
+	float sum; int i;
+        for (i = 0; i < NZEROS; i++) 
+	    xv[i] = xv[i+1];
+        xv[NZEROS] = next input value / GAIN;
+        sum = 0.0;
+        for (i = 0; i <= NZEROS; i++) sum += (xcoeffs[i] * xv[i]);
+        next output value = sum;
+    }
+}
+#endif
+
+/*--------------------------------------------------------------------*/
 
 #define SQR(x)		((x)*(x))
 #define LERP(t, a, b)	((1-(t))*(a)+(t)*(b))
@@ -219,26 +269,31 @@ main(int argc, char *argv[])
 
     /* allocate space for input and output images */
     inp =  srcdata.data_out ;
+    
     inpi = (float *) calloc(height * width, sizeof(float)) ;
     inpq = (float *) calloc(height * width, sizeof(float)) ;
+
     outi = (float *) calloc(height * width, sizeof(float)) ;
     outq = (float *) calloc(height * width, sizeof(float)) ;
-    out = (float *) calloc(height * width, sizeof(float)) ;
 
+    out  = (float *) calloc(height * width, sizeof(float)) ;
+
+    /* Use the Hilbert Transform to change inp to inpi/inpq */
 
     /* Mix with an oscillator... */
-   
-    float omega = 0.0 ;
-    float domega = 2400. * 2. * M_PI / SR ;
+    float complex omega = 1. ;
+    float complex domega = cexp(I*2.0*M_PI*2400/SR) ;
+
     for (i=0; i<height*width; i++) {
-	inpi[i] = inp[i] * cos(omega) ;     /* To generate I/Q... */
-	inpq[i] = inp[i] * sin(omega) ;
-	omega += domega ;
+	float complex x = inp[i] ;
+	x *= omega ;
+	inpi[i] = creal(x) ;
+	inpq[i] = cimag(x) ;
+	omega *= domega ;
     }
 
+#if 0
     /* filter */
-
-#if 1
     for (i=0; i<height*width; i++) {
         outi[i] = inpi[i] ;
         outq[i] = inpq[i] ;
@@ -251,6 +306,7 @@ main(int argc, char *argv[])
 	out[i] = sqrt(SQR(outi[i])+SQR(outq[i])) ;
 
     fp = fopen("newsync.dat", "w") ;
+
     for (i=0; i<height*width-SYNC_LENGTH; i++) {
         float sumA = 0., sumB = 0., avg =0. ;
 	
@@ -264,6 +320,7 @@ main(int argc, char *argv[])
         }
         fprintf(fp, "%d %f %f\n", i, sumA, sumB) ;
     }
+
     fclose(fp) ;
 
     /* create a different output buffer to hold 
