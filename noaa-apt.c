@@ -18,7 +18,6 @@
  * or otherwise cluttering up the code with lots of useless stuff.
  *
  * Written by Mark VandeWettering
- *
  */
 
 #define SQR(x)		((x)*(x))
@@ -148,7 +147,7 @@ histfind(float f[], int n, float t)
     abort() ;
 }
 
-
+int
 main(int argc, char *argv[])
 {
     SNDFILE *sf ;
@@ -216,7 +215,7 @@ main(int argc, char *argv[])
     width = SR / 2 ;
 
     fprintf(stderr, "     Image is ~ %d lines, %d samples per line.\n", height, width) ;
-    fprintf(stderr, "     check: %d versus %d\n", srcdata.output_frames_gen, height*width) ;
+    fprintf(stderr, "     check: %ld versus %d\n", srcdata.output_frames_gen, height*width) ;
 
     /* allocate space for input and output images */
     inp =  srcdata.data_out ;
@@ -239,7 +238,7 @@ main(int argc, char *argv[])
 
     /* filter */
 
-#if 0
+#if 1
     for (i=0; i<height*width; i++) {
         outi[i] = inpi[i] ;
         outq[i] = inpq[i] ;
@@ -251,14 +250,17 @@ main(int argc, char *argv[])
     for (i=0; i<height*width; i++)
 	out[i] = sqrt(SQR(outi[i])+SQR(outq[i])) ;
 
-    /* OKAY, try the matched filter... */
-
     fp = fopen("newsync.dat", "w") ;
     for (i=0; i<height*width-SYNC_LENGTH; i++) {
-        float sumA = 0., sumB = 0. ;
+        float sumA = 0., sumB = 0., avg =0. ;
+	
+        for (j=0; j<SYNC_LENGTH; j++)
+	    avg += out[i+j] ;
+	avg /= SYNC_LENGTH ;
+
         for (j=0; j<SYNC_LENGTH; j++) {
-            sumA += out[i] * syncA[SYNC_LENGTH-1-j] ;
-            sumB += out[i] * syncB[SYNC_LENGTH-1-j] ;
+            sumA += (out[i+j] - avg) * syncA[SYNC_LENGTH-1-j] ;
+            sumB += (out[i+j] - avg) * syncB[SYNC_LENGTH-1-j] ;
         }
         fprintf(fp, "%d %f %f\n", i, sumA, sumB) ;
     }
@@ -300,6 +302,7 @@ main(int argc, char *argv[])
     }
 #endif
         
+#if 0
     /* now, try generating the sync.. */
     dofilter(syncifilter, SYNC_FILTER_LENGTH, out2, height*NEW_WIDTH, synci) ;
     dofilter(syncqfilter, SYNC_FILTER_LENGTH, out2, height*NEW_WIDTH, syncq) ;
@@ -314,6 +317,7 @@ main(int argc, char *argv[])
     for (i=0; i<height*NEW_WIDTH; i++) 
         fprintf(fp, "%f\n", synci[i]) ;
     fclose(fp) ;
+#endif
 
 #define HISTOGRAM_BINS 2000
     float hist[HISTOGRAM_BINS] ;
@@ -370,6 +374,5 @@ main(int argc, char *argv[])
 
     pclose(fp) ;
 
-    exit(0) ;
-
+    return 0 ;
 }
